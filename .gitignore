@@ -1,0 +1,5 @@
+# Avoid input and output files
+*.log
+*.out
+*.tsv
+*.csv
