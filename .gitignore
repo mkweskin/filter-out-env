@@ -1,5 +1,6 @@
-# Avoid input and output files
+# Avoid input, output, tmp files
 *.log
 *.out
 *.tsv
 *.csv
+tmp
