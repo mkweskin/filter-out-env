@@ -1,13 +1,94 @@
 #!/bin/sh
 
-# Species words to filter
-# This should be a | separated list, with no other characters between the words.
-# Partial matches will be found, like "environmental" for "environment"
-# exmaple: 'uncultured|environment'
-FILTEROUT='uncultured|environment'
+# info message dipslayed on misconfiguration errors
+function usage
+{
+    cat << EOF
 
-# Set to "verbose" for verbose output
+
+Usage: $0 input.tsv
+
+Input file name is REQUIRED and must be the final argument on the list.
+
+Optional arguments:
+  -x OUTDIR:            Directory for output file.
+                        Default: $OUTDIR
+  -x OUTEXT:            Extension used for the output file.
+                        Default: $OUTEXT
+  -f FILTEROUT:            Text to filter out from taxa names.
+                        This should be a | separated list with no other characters between
+                        the words. Partial matches will be found, like
+                        "environmental" for "environment".
+                        Default: '$FILTEROUT'
+  -m MODE:              Mode for when NO blast hits pass the filter.
+                          strict: No output is put in the out file.
+                          relaxed: Top hit is put in the out file.
+                        Default: $MODE
+  -s STAXID_COL:        Which column of the tsv has the taxon name of
+                        the blast hit.
+                        Default: $STAXID_COL
+  -v                    Enable verbose logging. Default: disabled.
+  -n                    No warning before overwriting an exiting output file.
+                        Default: disabled
+  -h                    This help message.
+
+EOF
+exit 1
+}
+
+# Defaults:
+# Species words to filter
+FILTEROUT='uncultured|environment'
+# Logging level
 LOGLEVEL=
+# Extension for outfile
+OUTEXT=.out
+# Extension for tmp file
+TMPEXT=.tmp
+# Extension for file with unqiue seq names
+UNIQEXT=.uniq.tmp
+# Where output files go
+OUTDIR=.
+# Column with Species name
+STAXID_COL=4
+# mode for nothing passing filter
+MODE=strict
+
+
+
+###
+# Process command line options
+###
+
+while getopts "x:f:vd:s:m:nh" option; do
+    case "${option}" in
+        x)
+            OUTEXT=${OPTARG}
+            ;;
+        f)
+            FILTEROUT=${OPTARG}
+            ;;
+        v)
+            LOGLEVEL=verbose
+            ;;
+        d)
+            OUTDIR=${OPTARG}
+            ;;
+        s)
+            STAXID_COL=${OPTARG}
+            ;;
+        m)
+            MODE=${OPTARG}
+            ;;
+        n)
+            WARN=no
+            ;;
+        h)
+            usage
+            ;;
+    esac
+done
+shift $((OPTIND-1))
 
 # Logging function
 function ScriptLogging {
@@ -24,73 +105,110 @@ function ScriptLogging {
 # Input file
 INFILE=$1
 if [ -z $INFILE ]; then
-  echo "Give the TSV blast output file as the program argument"
-  echo "For example:"
-  echo "  $0 infile.tsv"
-  exit 1
+  echo "ERROR: Give the TSV blast output file as the program argument"
+  usage
 fi
-if [ ! -f $INFLIE ]; then
-  echo "The given input file was not found: $INFILE"
+if [ ! -e $INFILE ]; then
+  echo "ERROR: The given input file was not found: $INFILE"
   exit 1
 fi
 ScriptLogging "Input file: $INFILE"
 
+# Test if a proper mode was given
+# make MODE lowercase
+MODE=$(echo $MODE | tr '[:upper:]' '[:lower:]')
+if [ ! $MODE = "strict" ] && [ ! $MODE = "relaxed" ]; then
+  echo "ERROR: the given mode is not valid: $MODE"
+  usage
+fi
+
+# Test writing to the OUTDIR
+RAND=$OUTDIR/$RANDOM$RANDOM.tmp
+touch $RAND 2>/dev/null
+[ ! -e $RAND ] && echo "ERROR: there was an error writing to the specified temporary directory: $OUTDIR" && exit 1
+rm -f $RAND
+
+# Where tmp files will go with the path and the input file name without extensions
+TMPFILEBASE="${OUTDIR}/${INFILE%.*}"
+
 # Output file
-OUTEXT=".out"
-OUTFILE="${INFILE%.*}"${OUTEXT}
+OUTFILE=${TMPFILEBASE}${OUTEXT}
 ScriptLogging "Output file: $OUTFILE"
 # If the file exists, prompt the user if they want to remove it, otherwise exit
-[ -f $OUTFILE ] && ScriptLogging "Output file found, remove?" && rm -i $OUTFILE
-[ -f $OUTFILE ] && exit 1
+if [ -e $OUTFILE ] && [ -z $WARN ]; then
+  ScriptLogging "Output file found (${OUTFILE}), overwrite? (y/n)"
+  rm -i $OUTFILE
+  [ -e $OUTFILE ] && exit 1
+fi
 
-# TMPDIR
-TMPDIR=tmp
-rm -rf $TMPDIR 2>/dev/null
-mkdir $TMPDIR
-ScriptLogging "Temporary output going in: $TMPDIR" verbose
+# Tmp file
+TMPFILE=${TMPFILEBASE}${TMPEXT}
+[ -e $TMPFILE ] && rm $TMPFILE
+[ -e $TMPFILE ] && exit 1
 
-# Column with Species name
-STAXID_COL=4
+# Unique names file
+UNIQFILE=${TMPFILEBASE}${UNIQEXT}
+[ -e $UNIQFILE ] && rm $UNIQFILE
+[ -e $UNIQFILE ] && exit 1
+
 ScriptLogging "Subject Taxonomy ID is in columns: $STAXID_COL" verbose
-
+ScriptLogging "Taxa names to filter out: $FILTEROUT" verbose
 
 # Get all the unqiue sequence names
-awk '{print $1}' $INFILE | uniq >$TMPDIR/uniq_query_names
-QUERYCOUNT=$(wc -l $TMPDIR/uniq_query_names | awk '{print $1}')
+awk '{print $1}' $INFILE | uniq >$UNIQFILE
+QUERYCOUNT=$(wc -l $UNIQFILE | awk '{print $1}')
 ScriptLogging "Unique query sequence names: $QUERYCOUNT"
+
+if [ ! -s $UNIQFILE ]; then
+  echo "ERROR: There was an error determining the unique sequence names."
+  echo "This file was not found or is empty. It should contain the unique names: $UNIQFILE"
+  exit 1
+fi
 
 # Iterate through sequence names
 while read SEQUENCE; do
   ScriptLogging "Processing $SEQUENCE" verbose
   # Create a file with only those sequence's results
-  grep -E "^${SEQUENCE}[[:space:]]" $INFILE > $TMPDIR/${SEQUENCE}.tmp
-  BLASTCOUNT=$(wc -l $TMPDIR/${SEQUENCE}.tmp | awk '{print $1}')
-  ScriptLogging "  Results found: $BLASTCOUNT" verbose
-  # "TODO: Check for no results (is that possible?)"
+  grep -E "^${SEQUENCE}[[:space:]]" $INFILE > $TMPFILE
+  HITCOUNT=$(wc -l $TMPFILE | awk '{print $1}')
+  ScriptLogging "  Results found: $HITCOUNT" verbose
   # "TODO: Sort by bit score"
   # Iterate for each blast hit
-    CURRCOUNT=1
+    CURRHIT=1
     while read CURRLINE; do
+      if [ "$CURRHIT" -eq "1" ]; then
+        # Save the first hit. If we're in relaxed mode, this will be used if everything is filtered
+        FIRSTLINE="$CURRLINE"
+      fi
       # check for words that indicate we should skip this line
       echo "$CURRLINE" | grep -q -E $FILTEROUT || break
-      CURRCOUNT=$((CURRCOUNT+1))
-    done <$TMPDIR/${SEQUENCE}.tmp
-    if [ "$CURRCOUNT" -ge "$BLASTCOUNT" ]; then
-      ScriptLogging "  $SEQUENCE: NO good results found. Nothing being added to the output file."
+      CURRHIT=$((CURRHIT+1))
+    done <$TMPFILE
+    if [ "$CURRHIT" -ge "$HITCOUNT" ]; then
+      # Not good hits found
+      if [ $MODE = "strict" ]; then
+        # Nothing is output
+        ScriptLogging "  $SEQUENCE: NO good results found. Nothing being added to the output file."
+      else
+        echo "$FIRSTLINE" >> $OUTFILE
+        ScriptLogging "  $SEQUENCE: NO good results found. Best hit has been added."
+      fi
     else
-      ScriptLogging "  $SEQUENCE: Good result found on line $CURRCOUNT, adding it to \"$OUTFILE\"." verbose
+      ScriptLogging "  $SEQUENCE: Good result found on line $CURRHIT, adding it to \"$OUTFILE\"." verbose
       echo "$CURRLINE" >> $OUTFILE
     fi
+  # Clean up from the previous iteration, just to be extra sure we're not getting values from a previous sequence
+  rm -f $TMPFILE
+  unset FIRSTLINE
+done <$UNIQFILE
 
-  # Get first line
-#  CURRLINE="$(sed -n '1p' $TMPDIR/${SEQUENCE}.tmp)"
-  # TODO: prserver tabs in CURRLINE
-#  CURRSP="$(sed -n '1p' $TMPDIR/${SEQUENCE}.tmp | cut -f $STAXID_COL)"
-#  echo $CURRSP
-  
-done <$TMPDIR/uniq_query_names
-
-# remove tmp directory
-rm -rf $TMPDIR
+# remove file with unique names
+rm -f $UNIQFILE
 
 ScriptLogging "DONE processing samples"
+
+exit 0
+
+# Some code I didn't use:
+#  CURRLINE="$(sed -n '1p' $OUTDIR/${SEQUENCE}.tmp)"
+#  CURRSP="$(sed -n '1p' $OUTDIR/${SEQUENCE}.tmp | cut -f $STAXID_COL)"

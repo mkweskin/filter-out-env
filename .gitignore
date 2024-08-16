@@ -3,4 +3,5 @@
 *.out
 *.tsv
 *.csv
+*.tmp
 tmp

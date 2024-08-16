@@ -3,7 +3,43 @@
 Script to filter out blast results for a query sequence that have certain text in the species name.
 The first result without the forbidden text is added to the output file.
 
-Use:
+**Note: This has only been tested with GNU grep and awk that are typically found on Linux systems. It has not been tested on the BSD versions on macOS**
+
+On **Mac**, you can install GNU grep and sed using conda:
+`conda create -n gnused-env -n -c conda-forge --override-channels conda-forge::sed conda-forge:grep`
+
+Usage:
+
+```{base}
+$ ./filter-out-env.sh -h
+Usage: ./filter-out-env.sh input.tsv
+
+Input file name is REQUIRED and must be the final argument on the list.
+
+Optional arguments:
+  -x OUTDIR:            Directory for output file.
+                        Default: .
+  -x OUTEXT:            Extension used for the output file.
+                        Default: .out
+  -f FILTEROUT:            Text to filter out from taxa names.
+                        This should be a | separated list with no other characters between
+                        the words. Partial matches will be found, like
+                        "environmental" for "environment".
+                        Default: 'uncultured|environment'
+  -m MODE:              Mode for when NO blast hits pass the filter.
+                          strict: No output is put in the out file.
+                          relaxed: Top hit is put in the out file.
+                        Default: strict
+  -s STAXID_COL:        Which column of the tsv has the taxon name of
+                        the blast hit.
+                        Default: 4
+  -v                    Enable verbose logging. Default: disabled.
+  -n                    No warning before overwriting an exiting output file.
+                        Default: disabled
+  -h                    This help message.
+```
+
+Example:
 
 ```{bash}
 $ ./filter-out-env.sh input.tsv 
