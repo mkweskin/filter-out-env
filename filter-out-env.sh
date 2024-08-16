@@ -8,7 +8,7 @@ function usage
 
 Usage: $0 input.tsv
 
-Input file name is REQUIRED and must be the final argument on the list.
+Input file name is REQUIRED and must be the final argument.
 
 Optional arguments:
   -x OUTDIR:            Directory for output file.

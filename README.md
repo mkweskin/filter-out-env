@@ -6,7 +6,7 @@ The first result without the forbidden text is added to the output file.
 **Note: This has only been tested with GNU grep and awk that are typically found on Linux systems. It has not been tested on the BSD versions on macOS**
 
 On **Mac**, you can install GNU grep and sed using conda:
-`conda create -n gnused-env -n -c conda-forge --override-channels conda-forge::sed conda-forge:grep`
+`conda create -n grepsed-env -n -c conda-forge --override-channels conda-forge::sed conda-forge:grep`
 
 Usage:
 
@@ -14,7 +14,7 @@ Usage:
 $ ./filter-out-env.sh -h
 Usage: ./filter-out-env.sh input.tsv
 
-Input file name is REQUIRED and must be the final argument on the list.
+Input file name is REQUIRED and must be the final argument.
 
 Optional arguments:
   -x OUTDIR:            Directory for output file.
